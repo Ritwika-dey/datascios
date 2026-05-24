@@ -103,3 +103,6 @@ npm run dev
 - **Typography**: Syne (display) + DM Mono (data/code)
 - **Accent system**: Cyan (data) · Violet (AI) · Emerald (success) · Amber (models) · Rose (alerts)
 - **Inspiration**: Vercel · Linear · Supabase
+
+
+in progress
