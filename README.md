@@ -105,4 +105,3 @@ npm run dev
 - **Inspiration**: Vercel · Linear · Supabase
 
 
-in progress
