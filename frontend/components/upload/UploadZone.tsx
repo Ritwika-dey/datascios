@@ -1,195 +1,116 @@
 "use client";
+import { useState, useRef } from "react";
 
-import { useState, useCallback, useRef } from "react";
-import { Upload, File, X, CheckCircle, AlertCircle, CloudUpload, Loader } from "lucide-react";
-import { cn, formatBytes } from "../../lib/utils";
-import { api } from "../../services/api";
-
-interface UploadedFile {
-  file: File;
-  status: "idle" | "uploading" | "success" | "error";
-  progress: number;
-  error?: string;
-  response?: { filename: string; file_id: string };
-}
+type FileState = { file: File; status: "idle" | "uploading" | "success" | "error"; progress: number; fileId?: string };
 
 export default function UploadZone() {
+  const [files, setFiles] = useState<FileState[]>([]);
   const [dragging, setDragging] = useState(false);
-  const [uploads, setUploads] = useState<UploadedFile[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const addFiles = useCallback((files: File[]) => {
-    const valid = files.filter(f =>
-      f.name.endsWith(".csv") || f.name.endsWith(".xlsx") || f.name.endsWith(".xls")
-    );
-    const newUploads: UploadedFile[] = valid.map(f => ({ file: f, status: "idle", progress: 0 }));
-    setUploads(prev => [...prev, ...newUploads]);
-    newUploads.forEach((_, i) => uploadFile(uploads.length + i, valid[i]));
-  }, [uploads.length]);
-
-  const uploadFile = async (index: number, file: File) => {
-    setUploads(prev => prev.map((u, i) =>
-      i === index ? { ...u, status: "uploading" } : u
-    ));
-
-    try {
-      const response = await api.uploadFile(file, (progress) => {
-        setUploads(prev => prev.map((u, i) =>
-          i === index ? { ...u, progress } : u
-        ));
-      });
-
-      setUploads(prev => prev.map((u, i) =>
-        i === index ? { ...u, status: "success", progress: 100, response } : u
-      ));
-    } catch (err) {
-      setUploads(prev => prev.map((u, i) =>
-        i === index ? { ...u, status: "error", error: (err as Error).message } : u
-      ));
-    }
+  const addFiles = (incoming: File[]) => {
+    const valid = incoming.filter(f => /\.(csv|xlsx|xls)$/i.test(f.name));
+    setFiles(prev => [...prev, ...valid.map(f => ({ file: f, status: "idle" as const, progress: 0 }))]);
   };
 
-  const removeFile = (index: number) => {
-    setUploads(prev => prev.filter((_, i) => i !== index));
-  };
+  const upload = async (idx: number) => {
+    const item = files[idx];
+    if (!item || item.status === "uploading") return;
 
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    addFiles(Array.from(e.dataTransfer.files));
+    setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: "uploading", progress: 0 } : f));
+
+    const formData = new FormData();
+    formData.append("file", item.file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "http://localhost:8000/upload");
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        setFiles(prev => prev.map((f, i) => i === idx ? { ...f, progress: pct } : f));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const data = JSON.parse(xhr.responseText);
+        setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: "success", progress: 100, fileId: data.file_id } : f));
+      } else {
+        setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: "error" } : f));
+      }
+    };
+
+    xhr.onerror = () => setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: "error" } : f));
+    xhr.send(formData);
   };
 
   return (
-    <div className="space-y-4">
+    <div>
       {/* Drop zone */}
       <div
         onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        className={cn(
-          "relative cursor-pointer rounded-2xl p-12 text-center transition-all duration-300",
-          dragging ? "scale-[1.01]" : "scale-100"
-        )}
+        onDrop={e => { e.preventDefault(); setDragging(false); addFiles(Array.from(e.dataTransfer.files)); }}
         style={{
-          background: dragging
-            ? "rgba(0,212,255,0.06)"
-            : "rgba(18,18,24,0.6)",
-          border: dragging
-            ? "2px dashed rgba(0,212,255,0.5)"
-            : "2px dashed rgba(255,255,255,0.1)",
-          boxShadow: dragging ? "0 0 40px rgba(0,212,255,0.1)" : "none",
-        }}>
-
-        {/* Animated background on drag */}
-        {dragging && (
-          <div className="absolute inset-0 rounded-2xl pointer-events-none overflow-hidden">
-            <div className="absolute inset-0 animate-pulse-glow"
-              style={{ background: "radial-gradient(ellipse at center, rgba(0,212,255,0.08), transparent 70%)" }} />
-          </div>
-        )}
-
-        <input
-          ref={inputRef}
-          type="file"
-          className="hidden"
-          accept=".csv,.xlsx,.xls"
-          multiple
-          onChange={(e) => addFiles(Array.from(e.target.files || []))}
-        />
-
-        <div className="flex flex-col items-center gap-4 relative z-10">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
-            style={{
-              background: dragging ? "rgba(0,212,255,0.15)" : "rgba(255,255,255,0.05)",
-              border: dragging ? "1px solid rgba(0,212,255,0.3)" : "1px solid rgba(255,255,255,0.1)",
-              transition: "all 0.3s",
-            }}>
-            <CloudUpload size={28} style={{ color: dragging ? "#00d4ff" : "#4a4a6a" }} />
-          </div>
-
-          <div>
-            <p className="text-base font-semibold mb-1" style={{ color: dragging ? "#00d4ff" : "#f0f0f8" }}>
-              {dragging ? "Release to upload" : "Drop your dataset here"}
-            </p>
-            <p className="text-sm" style={{ color: "#4a4a6a" }}>
-              or <span style={{ color: "#00d4ff" }}>click to browse</span> · CSV, XLSX supported
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {["CSV", "XLSX", "XLS"].map(ext => (
-              <span key={ext} className="text-xs font-mono px-2 py-1 rounded-lg"
-                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "#8b8ba8" }}>
-                .{ext}
-              </span>
-            ))}
-          </div>
-        </div>
+          border: `2px dashed ${dragging ? "#22d3ee" : "rgba(255,255,255,0.1)"}`,
+          borderRadius: "12px",
+          padding: "48px 32px",
+          textAlign: "center",
+          cursor: "pointer",
+          backgroundColor: dragging ? "rgba(34,211,238,0.04)" : "rgba(255,255,255,0.02)",
+          transition: "all 0.2s",
+          marginBottom: "24px",
+        }}
+      >
+        <div style={{ fontSize: "32px", marginBottom: "12px" }}>⬆</div>
+        <div style={{ fontSize: "15px", color: "#e2e8f0", fontWeight: 600, marginBottom: "6px" }}>Drop your dataset here</div>
+        <div style={{ fontSize: "13px", color: "#64748b" }}>Supports CSV, XLSX, XLS · Max 50MB</div>
+        <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" multiple hidden
+          onChange={e => addFiles(Array.from(e.target.files || []))} />
       </div>
 
       {/* File list */}
-      {uploads.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs font-mono uppercase tracking-widest" style={{ color: "#4a4a6a" }}>
-            Files · {uploads.length}
-          </p>
-          {uploads.map((upload, i) => (
-            <div key={i} className="flex items-center gap-3 p-4 rounded-xl"
-              style={{ background: "rgba(18,18,24,0.8)", border: "1px solid rgba(255,255,255,0.07)" }}>
-
-              {/* File icon */}
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: "rgba(0,212,255,0.08)", border: "1px solid rgba(0,212,255,0.15)" }}>
-                <File size={16} style={{ color: "#00d4ff" }} />
+      {files.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {files.map((item, idx) => (
+            <div key={idx} style={{
+              backgroundColor: "#0d0d14",
+              border: "1px solid rgba(255,255,255,0.06)",
+              borderRadius: "10px",
+              padding: "16px",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontSize: "13px", color: "#e2e8f0", fontWeight: 500 }}>{item.file.name}</span>
+                <span style={{ fontSize: "11px", color: "#64748b" }}>
+                  {(item.file.size / 1024).toFixed(1)} KB
+                </span>
               </div>
 
-              {/* File info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <p className="text-sm font-medium truncate" style={{ color: "#f0f0f8" }}>{upload.file.name}</p>
-                  <span className="text-xs font-mono flex-shrink-0" style={{ color: "#4a4a6a" }}>
-                    {formatBytes(upload.file.size)}
-                  </span>
-                </div>
+              {item.status === "idle" && (
+                <button onClick={() => upload(idx)} style={{
+                  padding: "6px 16px", backgroundColor: "#22d3ee", color: "#000",
+                  border: "none", borderRadius: "6px", fontSize: "12px", fontWeight: 600, cursor: "pointer",
+                }}>Upload</button>
+              )}
 
-                {/* Progress bar */}
-                {upload.status === "uploading" && (
-                  <div>
-                    <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-                      <div className="h-full rounded-full transition-all duration-300"
-                        style={{ width: `${upload.progress}%`, background: "linear-gradient(90deg, #00d4ff, #7c3aed)" }} />
-                    </div>
-                    <p className="text-xs font-mono mt-1" style={{ color: "#4a4a6a" }}>{upload.progress}% uploaded</p>
+              {item.status === "uploading" && (
+                <div>
+                  <div style={{ height: "4px", backgroundColor: "rgba(255,255,255,0.06)", borderRadius: "2px", overflow: "hidden" }}>
+                    <div style={{ width: `${item.progress}%`, height: "100%", backgroundColor: "#22d3ee", borderRadius: "2px", transition: "width 0.2s" }} />
                   </div>
-                )}
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "4px" }}>{item.progress}%</div>
+                </div>
+              )}
 
-                {upload.status === "success" && (
-                  <p className="text-xs font-mono" style={{ color: "#10b981" }}>
-                    ✓ Uploaded · ID: {upload.response?.file_id}
-                  </p>
-                )}
+              {item.status === "success" && (
+                <div style={{ fontSize: "12px", color: "#34d399" }}>✓ Uploaded · ID: {item.fileId}</div>
+              )}
 
-                {upload.status === "error" && (
-                  <p className="text-xs font-mono" style={{ color: "#f43f5e" }}>✗ {upload.error}</p>
-                )}
-
-                {upload.status === "idle" && (
-                  <p className="text-xs font-mono" style={{ color: "#4a4a6a" }}>Queued...</p>
-                )}
-              </div>
-
-              {/* Status icon */}
-              <div className="flex-shrink-0">
-                {upload.status === "uploading" && <Loader size={16} className="animate-spin" style={{ color: "#00d4ff" }} />}
-                {upload.status === "success" && <CheckCircle size={16} style={{ color: "#10b981" }} />}
-                {upload.status === "error" && <AlertCircle size={16} style={{ color: "#f43f5e" }} />}
-                {upload.status === "idle" && (
-                  <button onClick={() => removeFile(i)}>
-                    <X size={16} style={{ color: "#4a4a6a" }} />
-                  </button>
-                )}
-              </div>
+              {item.status === "error" && (
+                <div style={{ fontSize: "12px", color: "#f87171" }}>✗ Upload failed — is the backend running?</div>
+              )}
             </div>
           ))}
         </div>
