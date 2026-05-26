@@ -5,6 +5,7 @@ pandas==2.2.3
 openpyxl==3.1.5
 pydantic==2.8.2
 python-dotenv==1.0.1
+scipy==1.15.3
 # Day 3+:
 # scikit-learn==1.5.1
 # xgboost==2.1.1
