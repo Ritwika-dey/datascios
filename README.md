@@ -71,21 +71,6 @@ npm run dev
 
 ---
 
-## 8-Day MVP Roadmap
-
-| Day | Focus |
-|-----|-------|
-| **1** ✅ | Setup · Dashboard UI · Upload endpoint · Frontend-backend connection |
-| 2 | EDA — pandas profiling, auto charts, statistics |
-| 3 | ML model training — scikit-learn, XGBoost |
-| 4 | Model comparison UI, feature importance |
-| 5 | Chat with data — LangChain + OpenAI |
-| 6 | AI insights + report generation |
-| 7 | Polish, auth skeleton, deployment |
-| 8 | Final testing, docs, portfolio packaging |
-
----
-
 ## API Endpoints (Day 1)
 
 | Method | Path | Description |
